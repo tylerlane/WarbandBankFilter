@@ -22,17 +22,17 @@ local classArmor = {
 }
 
 local classWeapons = {
-    MAGE = {"Daggers", "One-Handed Swords", "Staves", "Two-Handed Staves", "Wands"},
-    PRIEST = {"Daggers", "One-Handed Maces", "Staves", "Two-Handed Staves", "Wands"},
-    WARLOCK = {"Daggers", "One-Handed Swords", "Staves", "Two-Handed Staves", "Wands"},
+    MAGE = {"Daggers", "One-Handed Swords", "Staves", "Wands"},
+    PRIEST = {"Daggers", "One-Handed Maces", "Staves", "Wands"},
+    WARLOCK = {"Daggers", "One-Handed Swords", "Staves", "Wands"},
     ROGUE = {"Daggers", "One-Handed Swords", "Fist Weapons", "One-Handed Maces", "Bows", "Crossbows", "Guns"},
-    DRUID = {"Daggers", "Fist Weapons", "One-Handed Maces", "Polearms", "Staves", "Two-Handed Maces", "Two-Handed Staves"},
-    MONK = {"Fist Weapons", "One-Handed Maces", "One-Handed Swords", "Polearms", "Staves", "Two-Handed Staves"},
+    DRUID = {"Daggers", "Fist Weapons", "One-Handed Maces", "Polearms", "Staves", "Two-Handed Maces"},
+    MONK = {"Fist Weapons", "One-Handed Maces", "One-Handed Swords", "Polearms", "Staves"},
     DEMONHUNTER = {"Fist Weapons", "One-Handed Swords", "Warglaives"},
-    HUNTER = {"Daggers", "Fist Weapons", "One-Handed Swords", "One-Handed Axes", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Staves", "Two-Handed Staves", "Bows", "Crossbows", "Guns"},
-    SHAMAN = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Axes", "Staves", "Two-Handed Staves", "Shields"},
-    EVOKER = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Staves", "Two-Handed Staves"},
-    WARRIOR = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Staves", "Two-Handed Staves", "Bows", "Crossbows", "Guns", "Shields"},
+    HUNTER = {"Daggers", "Fist Weapons", "One-Handed Swords", "One-Handed Axes", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Staves", "Bows", "Crossbows", "Guns"},
+    SHAMAN = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Axes", "Staves", "Shields"},
+    EVOKER = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Staves"},
+    WARRIOR = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Staves", "Bows", "Crossbows", "Guns", "Shields"},
     PALADIN = {"One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Shields"},
     DEATHKNIGHT = {"One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Polearms"}
 }
@@ -264,38 +264,44 @@ local function IsMatchingArmor(itemID)
         if not isAllowedWeapon then
             result = false
         else
-            -- Check if weapon has our primary stat(s)
+            -- For allowed weapons, check primary stats
             local stats = C_Item.GetItemStats(itemID)
             if not stats then
-                -- If no stats available, try to force load the item info
-                local itemName = GetItemInfo(itemID)
-                if not itemName then
-                    -- Item not loaded yet, don't cache and show it temporarily
-                    return true
-                else
-                    result = false -- Item is loaded but has no stats, hide it
-                end
+                -- If no stats available, show the weapon (it might be a leveling weapon or special item)
+                result = true
             else
-                -- For weapons, be strict about primary stats - must have at least one of our primary stats
+                -- Check if weapon has our primary stat(s)
                 local hasMyPrimaryStat = false
+                local hasAnyPrimaryStat = false
+                
                 for statKey, statValue in pairs(stats) do
                     local upperKey = statKey:upper()
-                    for _, primaryStat in ipairs(myPrimaryStats) do
-                        local primaryStatUpper = primaryStat:upper()
-                        -- Look for exact stat names to avoid false matches
-                        if upperKey == "ITEM_MOD_" .. primaryStatUpper .. "_SHORT" or
-                           upperKey == primaryStatUpper or
-                           string.find(upperKey, "^ITEM_MOD_" .. primaryStatUpper .. "_") then
-                            hasMyPrimaryStat = true
+                    
+                    -- Check if it has any primary stat
+                    if upperKey == "ITEM_MOD_STRENGTH_SHORT" or upperKey == "STRENGTH" or string.find(upperKey, "^ITEM_MOD_STRENGTH_") or
+                       upperKey == "ITEM_MOD_AGILITY_SHORT" or upperKey == "AGILITY" or string.find(upperKey, "^ITEM_MOD_AGILITY_") or
+                       upperKey == "ITEM_MOD_INTELLECT_SHORT" or upperKey == "INTELLECT" or string.find(upperKey, "^ITEM_MOD_INTELLECT_") then
+                        hasAnyPrimaryStat = true
+                        
+                        -- Check if it has our specific primary stat(s)
+                        for _, primaryStat in ipairs(myPrimaryStats) do
+                            local primaryStatUpper = primaryStat:upper()
+                            if upperKey == "ITEM_MOD_" .. primaryStatUpper .. "_SHORT" or
+                               upperKey == primaryStatUpper or
+                               string.find(upperKey, "^ITEM_MOD_" .. primaryStatUpper .. "_") then
+                                hasMyPrimaryStat = true
+                                break
+                            end
+                        end
+                        
+                        if hasMyPrimaryStat then
                             break
                         end
                     end
-                    if hasMyPrimaryStat then
-                        break
-                    end
                 end
                 
-                result = hasMyPrimaryStat
+                -- Show weapon if it has our primary stat OR if it has no primary stats at all (like some special weapons)
+                result = hasMyPrimaryStat or not hasAnyPrimaryStat
             end
         end
     else
@@ -695,6 +701,66 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
         -- Start the loading attempts
         tryLoadItem(1)
     elseif msg == "staff" then
+        print("WarbandBankFilter: Testing staff detection...")
+        local frame = _G["AccountBankPanel"]
+        if frame and frame:IsVisible() then
+            local staffCount = 0
+            for i = 1, frame:GetNumChildren() do
+                local child = select(i, frame:GetChildren())
+                if child and child:GetObjectType() and string.find(child:GetObjectType(), "Button") then
+                    local itemID = nil
+                    if child.GetBagID and child.GetID then
+                        local bagID = child:GetBagID()
+                        local slotIndex = child:GetID()
+                        if bagID and slotIndex then
+                            local itemLocation = ItemLocation:CreateFromBagAndSlot(bagID, slotIndex)
+                            if itemLocation and itemLocation:IsValid() then
+                                itemID = C_Item.GetItemID(itemLocation)
+                            end
+                        end
+                    end
+                    
+                    if itemID then
+                        local _, _, _, _, _, itemType, itemSubType = GetItemInfo(itemID)
+                        if itemType == "Weapon" and itemSubType == "Staves" then
+                            staffCount = staffCount + 1
+                            local itemName = GetItemInfo(itemID)
+                            print("  Found staff: " .. (itemName or "Unknown") .. " (ID: " .. itemID .. ")")
+                            
+                            -- Test if it would be filtered
+                            local shouldShow = IsMatchingArmor(itemID)
+                            print("    Should show: " .. tostring(shouldShow))
+                            print("    Player class: " .. class)
+                            
+                            -- Test class restrictions
+                            local hasClassesLine, classFound = HasClassRestriction(itemID)
+                            if hasClassesLine then
+                                print("    Has class restriction: " .. tostring(classFound))
+                            end
+                            
+                            -- Test stats
+                            local stats = C_Item.GetItemStats(itemID)
+                            if stats then
+                                print("    Has stats - checking primary stats...")
+                                for statKey, statValue in pairs(stats) do
+                                    local upperKey = statKey:upper()
+                                    if upperKey == "ITEM_MOD_STRENGTH_SHORT" or upperKey == "STRENGTH" or string.find(upperKey, "^ITEM_MOD_STRENGTH_") or
+                                       upperKey == "ITEM_MOD_AGILITY_SHORT" or upperKey == "AGILITY" or string.find(upperKey, "^ITEM_MOD_AGILITY_") or
+                                       upperKey == "ITEM_MOD_INTELLECT_SHORT" or upperKey == "INTELLECT" or string.find(upperKey, "^ITEM_MOD_INTELLECT_") then
+                                        print("      Primary stat found: " .. statKey .. " = " .. statValue)
+                                    end
+                                end
+                            else
+                                print("    No stats available")
+                            end
+                        end
+                    end
+                end
+            end
+            print("  Total staves found: " .. staffCount)
+        else
+            print("  Warband bank not open")
+        end
         print("WarbandBankFilter: Testing Dalaran Defender's Battlestaff specifically...")
         local itemName = "Dalaran Defender's Battlestaff"
         
