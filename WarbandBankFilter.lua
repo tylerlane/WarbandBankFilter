@@ -2,6 +2,8 @@ local WarbandBankFilter = CreateFrame("Frame")
 local filterEnabled = true
 local initialized = false
 local watcher = nil -- Store reference to the watcher frame
+local itemFilterCache = {} -- Cache filter results to avoid repeated calculations
+local lastSearchText = "" -- Track search changes
 
 local classArmor = {
     MAGE = "Cloth",
@@ -20,17 +22,17 @@ local classArmor = {
 }
 
 local classWeapons = {
-    MAGE = {"Daggers", "One-Handed Swords", "Staves", "Wands"},
-    PRIEST = {"Daggers", "One-Handed Maces", "Staves", "Wands"},
-    WARLOCK = {"Daggers", "One-Handed Swords", "Staves", "Wands"},
+    MAGE = {"Daggers", "One-Handed Swords", "Staves", "Two-Handed Staves", "Wands"},
+    PRIEST = {"Daggers", "One-Handed Maces", "Staves", "Two-Handed Staves", "Wands"},
+    WARLOCK = {"Daggers", "One-Handed Swords", "Staves", "Two-Handed Staves", "Wands"},
     ROGUE = {"Daggers", "One-Handed Swords", "Fist Weapons", "One-Handed Maces", "Bows", "Crossbows", "Guns"},
-    DRUID = {"Daggers", "Fist Weapons", "One-Handed Maces", "Polearms", "Staves", "Two-Handed Maces"},
-    MONK = {"Fist Weapons", "One-Handed Maces", "One-Handed Swords", "Polearms", "Staves"},
+    DRUID = {"Daggers", "Fist Weapons", "One-Handed Maces", "Polearms", "Staves", "Two-Handed Maces", "Two-Handed Staves"},
+    MONK = {"Fist Weapons", "One-Handed Maces", "One-Handed Swords", "Polearms", "Staves", "Two-Handed Staves"},
     DEMONHUNTER = {"Fist Weapons", "One-Handed Swords", "Warglaives"},
-    HUNTER = {"Daggers", "Fist Weapons", "One-Handed Swords", "One-Handed Axes", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Staves", "Bows", "Crossbows", "Guns"},
-    SHAMAN = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Axes", "Staves", "Shields"},
-    EVOKER = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Staves"},
-    WARRIOR = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Staves", "Bows", "Crossbows", "Guns", "Shields"},
+    HUNTER = {"Daggers", "Fist Weapons", "One-Handed Swords", "One-Handed Axes", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Staves", "Two-Handed Staves", "Bows", "Crossbows", "Guns"},
+    SHAMAN = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Axes", "Staves", "Two-Handed Staves", "Shields"},
+    EVOKER = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Staves", "Two-Handed Staves"},
+    WARRIOR = {"Daggers", "Fist Weapons", "One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Staves", "Two-Handed Staves", "Bows", "Crossbows", "Guns", "Shields"},
     PALADIN = {"One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Polearms", "Shields"},
     DEATHKNIGHT = {"One-Handed Maces", "One-Handed Swords", "One-Handed Axes", "Two-Handed Maces", "Two-Handed Swords", "Two-Handed Axes", "Polearms"}
 }
@@ -55,6 +57,11 @@ local _, class = UnitClass("player")
 local myArmorType = classArmor[class]
 local myWeapons = classWeapons[class] or {}
 local myPrimaryStats = classPrimaryStats[class] or {}
+
+-- Clear cache when needed (e.g., when items change or addon reloads)
+local function ClearFilterCache()
+    itemFilterCache = {}
+end
 
 local function HasPrimaryStat(itemID)
     local stats = C_Item.GetItemStats(itemID)
@@ -163,17 +170,26 @@ end
 local function IsMatchingArmor(itemID)
     if not itemID then return false end
     
+    -- Check cache first
+    if itemFilterCache[itemID] ~= nil then
+        return itemFilterCache[itemID]
+    end
+    
+    local result = false -- Default to false
+    
     -- First check for class restrictions on ALL items
     local hasClassesLine, classFound = HasClassRestriction(itemID)
     if hasClassesLine then
         -- If item has "Classes:" line, only show if our class is listed
-        return classFound
+        result = classFound
+        itemFilterCache[itemID] = result
+        return result
     end
     
     -- Get item info - if it's not loaded yet, show the item (don't hide it)
     local _, _, _, _, _, itemType, itemSubType = GetItemInfo(itemID)
     
-    -- If item info isn't loaded yet, show the item by default
+    -- If item info isn't loaded yet, don't cache and show the item by default
     if not itemType or not itemSubType then
         return true
     end
@@ -182,66 +198,43 @@ local function IsMatchingArmor(itemID)
     if itemSubType == "Trinket" or itemSubType == "Miscellaneous" then
         local stats = C_Item.GetItemStats(itemID)
         if not stats then
-            return true -- No stats available, show it
-        end
-        
-        -- Debug for trinkets and miscellaneous items
-        local itemName = GetItemInfo(itemID)
-        local debugTrinkets = false -- Set to true to debug trinket filtering
-        if debugTrinkets and itemName then
-            print("WarbandBankFilter Debug Trinket/Misc: " .. itemName .. " (ID: " .. itemID .. ")")
-            print("  Player primary stats: " .. table.concat(myPrimaryStats, ", "))
-        end
-        
-        -- Check if trinket has any primary stats
-        local hasAnyPrimaryStat = false
-        local hasMyPrimaryStat = false
-        
-        for statKey, statValue in pairs(stats) do
-            local upperKey = statKey:upper()
+            result = true -- No stats available, show it
+        else
+            -- Check if trinket has any primary stats
+            local hasAnyPrimaryStat = false
+            local hasMyPrimaryStat = false
             
-            if debugTrinkets then
-                print("  Stat: " .. statKey .. " = " .. statValue)
-            end
-            
-            -- Check if it has any primary stat
-            if upperKey == "ITEM_MOD_STRENGTH_SHORT" or upperKey == "STRENGTH" or string.find(upperKey, "^ITEM_MOD_STRENGTH_") or
-               upperKey == "ITEM_MOD_AGILITY_SHORT" or upperKey == "AGILITY" or string.find(upperKey, "^ITEM_MOD_AGILITY_") or
-               upperKey == "ITEM_MOD_INTELLECT_SHORT" or upperKey == "INTELLECT" or string.find(upperKey, "^ITEM_MOD_INTELLECT_") then
-                hasAnyPrimaryStat = true
+            for statKey, statValue in pairs(stats) do
+                local upperKey = statKey:upper()
                 
-                if debugTrinkets then
-                    print("  Found primary stat: " .. upperKey)
-                end
-                
-                -- Check if it has our specific primary stat(s)
-                for _, primaryStat in ipairs(myPrimaryStats) do
-                    local primaryStatUpper = primaryStat:upper()
-                    if upperKey == "ITEM_MOD_" .. primaryStatUpper .. "_SHORT" or
-                       upperKey == primaryStatUpper or
-                       string.find(upperKey, "^ITEM_MOD_" .. primaryStatUpper .. "_") then
-                        hasMyPrimaryStat = true
-                        if debugTrinkets then
-                            print("  Matches our primary stat: " .. primaryStat)
+                -- Check if it has any primary stat
+                if upperKey == "ITEM_MOD_STRENGTH_SHORT" or upperKey == "STRENGTH" or string.find(upperKey, "^ITEM_MOD_STRENGTH_") or
+                   upperKey == "ITEM_MOD_AGILITY_SHORT" or upperKey == "AGILITY" or string.find(upperKey, "^ITEM_MOD_AGILITY_") or
+                   upperKey == "ITEM_MOD_INTELLECT_SHORT" or upperKey == "INTELLECT" or string.find(upperKey, "^ITEM_MOD_INTELLECT_") then
+                    hasAnyPrimaryStat = true
+                    
+                    -- Check if it has our specific primary stat(s)
+                    for _, primaryStat in ipairs(myPrimaryStats) do
+                        local primaryStatUpper = primaryStat:upper()
+                        if upperKey == "ITEM_MOD_" .. primaryStatUpper .. "_SHORT" or
+                           upperKey == primaryStatUpper or
+                           string.find(upperKey, "^ITEM_MOD_" .. primaryStatUpper .. "_") then
+                            hasMyPrimaryStat = true
+                            break
                         end
+                    end
+                    
+                    if hasMyPrimaryStat then
                         break
                     end
                 end
-                
-                if hasMyPrimaryStat then
-                    break
-                end
             end
+            
+            -- Show trinket/miscellaneous if it has our primary stat OR if it has no primary stats at all (only secondary stats)
+            result = hasMyPrimaryStat or not hasAnyPrimaryStat
         end
         
-        local result = hasMyPrimaryStat or not hasAnyPrimaryStat
-        if debugTrinkets then
-            print("  Has any primary stat: " .. tostring(hasAnyPrimaryStat))
-            print("  Has my primary stat: " .. tostring(hasMyPrimaryStat))
-            print("  Final result: " .. tostring(result))
-        end
-        
-        -- Show trinket/miscellaneous if it has our primary stat OR if it has no primary stats at all (only secondary stats)
+        itemFilterCache[itemID] = result
         return result
     end
     
@@ -251,12 +244,12 @@ local function IsMatchingArmor(itemID)
         if itemSubType == "Shields" then
             for _, weaponType in ipairs(myWeapons) do
                 if weaponType == "Shields" then
-                    return true
+                    result = true
+                    break
                 end
             end
-            return false
         else
-            return itemSubType == myArmorType
+            result = itemSubType == myArmorType
         end
     elseif itemType == "Weapon" then
         -- Check if weapon type is in our class's allowed weapons
@@ -269,45 +262,50 @@ local function IsMatchingArmor(itemID)
         end
         
         if not isAllowedWeapon then
-            return false
-        end
-        
-        -- Check if weapon has our primary stat(s)
-        local stats = C_Item.GetItemStats(itemID)
-        if not stats then
-            -- If no stats available, try to force load the item info
-            local itemName = GetItemInfo(itemID)
-            if not itemName then
-                return true -- Item not loaded yet, show it temporarily
-            else
-                return false -- Item is loaded but has no stats, hide it
-            end
-        end
-        
-        -- For weapons, be strict about primary stats - must have at least one of our primary stats
-        local hasMyPrimaryStat = false
-        for statKey, statValue in pairs(stats) do
-            local upperKey = statKey:upper()
-            for _, primaryStat in ipairs(myPrimaryStats) do
-                local primaryStatUpper = primaryStat:upper()
-                -- Look for exact stat names to avoid false matches
-                if upperKey == "ITEM_MOD_" .. primaryStatUpper .. "_SHORT" or
-                   upperKey == primaryStatUpper or
-                   string.find(upperKey, "^ITEM_MOD_" .. primaryStatUpper .. "_") then
-                    hasMyPrimaryStat = true
-                    break
+            result = false
+        else
+            -- Check if weapon has our primary stat(s)
+            local stats = C_Item.GetItemStats(itemID)
+            if not stats then
+                -- If no stats available, try to force load the item info
+                local itemName = GetItemInfo(itemID)
+                if not itemName then
+                    -- Item not loaded yet, don't cache and show it temporarily
+                    return true
+                else
+                    result = false -- Item is loaded but has no stats, hide it
                 end
-            end
-            if hasMyPrimaryStat then
-                break
+            else
+                -- For weapons, be strict about primary stats - must have at least one of our primary stats
+                local hasMyPrimaryStat = false
+                for statKey, statValue in pairs(stats) do
+                    local upperKey = statKey:upper()
+                    for _, primaryStat in ipairs(myPrimaryStats) do
+                        local primaryStatUpper = primaryStat:upper()
+                        -- Look for exact stat names to avoid false matches
+                        if upperKey == "ITEM_MOD_" .. primaryStatUpper .. "_SHORT" or
+                           upperKey == primaryStatUpper or
+                           string.find(upperKey, "^ITEM_MOD_" .. primaryStatUpper .. "_") then
+                            hasMyPrimaryStat = true
+                            break
+                        end
+                    end
+                    if hasMyPrimaryStat then
+                        break
+                    end
+                end
+                
+                result = hasMyPrimaryStat
             end
         end
-        
-        return hasMyPrimaryStat
     else
         -- All other items (jewelry, consumables, etc.) are always shown
-        return true
+        result = true
     end
+    
+    -- Cache the result
+    itemFilterCache[itemID] = result
+    return result
 end
 
 local function FilterItems(frame)
@@ -327,6 +325,21 @@ local function FilterItems(frame)
     else
         -- Not a warband bank, do nothing
         return
+    end
+    
+    -- Check if search text has changed
+    local searchBox = frame.SearchBox
+    local currentSearchText = ""
+    if searchBox and searchBox:GetText() then
+        currentSearchText = searchBox:GetText()
+    end
+    
+    local searchChanged = currentSearchText ~= lastSearchText
+    lastSearchText = currentSearchText
+    
+    -- If search changed, clear cache to force re-evaluation
+    if searchChanged then
+        ClearFilterCache()
     end
     
     -- Apply filter to all found item buttons
@@ -391,6 +404,8 @@ local function CreateFilterCheckbox(frame)
         filterEnabled = self:GetChecked()
         WarbandBankFilterDB = WarbandBankFilterDB or {}
         WarbandBankFilterDB.enabled = filterEnabled
+        -- Clear cache when filter is toggled to ensure immediate visual update
+        ClearFilterCache()
         FilterItems(frame)
     end)
 
@@ -416,17 +431,19 @@ local function TryInitWarbandBankFrame()
                 print("WarbandBankFilter: Found warband bank with " .. buttonCount .. " item buttons")
                 CreateFilterCheckbox(frame)
                 
-                -- Create a timer to periodically update the filter
-                local updateTimer = C_Timer.NewTicker(0.5, function()
-                    if frame:IsVisible() then
-                        FilterItems(frame)
-                    end
-                end)
+                -- Hook search functionality to detect changes
+                if frame.SearchBox then
+                    frame.SearchBox:HookScript("OnTextChanged", function()
+                        -- Delay filtering slightly to avoid excessive calls while typing
+                        C_Timer.After(0.3, function()
+                            if frame:IsVisible() then
+                                FilterItems(frame)
+                            end
+                        end)
+                    end)
+                end
                 
-                -- Store the timer so we can cancel it later if needed
-                frame.WarbandBankFilterTimer = updateTimer
-                
-                -- Also hook when the frame is shown
+                -- Also hook when the frame is shown for initial filtering
                 frame:HookScript("OnShow", function()
                     C_Timer.After(0.1, function()
                         FilterItems(frame)
@@ -436,14 +453,12 @@ local function TryInitWarbandBankFrame()
                 -- Hook when the frame is hidden to cleanup
                 frame:HookScript("OnHide", function()
                     print("WarbandBankFilter: Warband bank closed, cleaning up...")
-                    if frame.WarbandBankFilterTimer then
-                        frame.WarbandBankFilterTimer:Cancel()
-                        frame.WarbandBankFilterTimer = nil
-                    end
                     if frame.WarbandBankFilterCheckbox then
                         frame.WarbandBankFilterCheckbox:Hide()
                         frame.WarbandBankFilterCheckbox = nil
                     end
+                    -- Clear cache when closing to free memory
+                    ClearFilterCache()
                     initialized = false -- Reset so it can reinitialize next time
                     
                     -- Restart the watcher to detect when warband bank opens again
@@ -486,10 +501,23 @@ WarbandBankFilter:SetScript("OnEvent", function(self, event, ...)
                 self:SetScript("OnUpdate", nil) -- Stop watching
             end
         end)
+    elseif event == "BAG_UPDATE" or event == "PLAYERBANKSLOTS_CHANGED" then
+        -- Clear cache when items change
+        ClearFilterCache()
+        
+        -- Re-filter if warband bank is open
+        local frame = _G["AccountBankPanel"]
+        if frame and frame:IsVisible() then
+            C_Timer.After(0.1, function()
+                FilterItems(frame)
+            end)
+        end
     end
 end)
 
 WarbandBankFilter:RegisterEvent("ADDON_LOADED")
+WarbandBankFilter:RegisterEvent("BAG_UPDATE")
+WarbandBankFilter:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
 
 -- Debug slash command to help identify warband bank frame
 SLASH_WARBANDBANKFILTER1 = "/wbf"
@@ -666,6 +694,37 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
         
         -- Start the loading attempts
         tryLoadItem(1)
+    elseif msg == "staff" then
+        print("WarbandBankFilter: Testing Dalaran Defender's Battlestaff specifically...")
+        local itemName = "Dalaran Defender's Battlestaff"
+        
+        -- Find item by name
+        local itemID = nil
+        for i = 1, 300000 do
+            local name = GetItemInfo(i)
+            if name and name:lower() == itemName:lower() then
+                itemID = i
+                break
+            end
+        end
+        
+        if itemID then
+            print("  Found item ID: " .. itemID)
+            local _, _, _, _, _, itemType, itemSubType = GetItemInfo(itemID)
+            print("  Item type: " .. (itemType or "nil"))
+            print("  Item subtype: " .. (itemSubType or "nil"))
+            print("  Player class: " .. class)
+            print("  Player weapons: " .. table.concat(myWeapons, ", "))
+            
+            local hasClassesLine, classFound = HasClassRestriction(itemID)
+            print("  Has Classes line: " .. tostring(hasClassesLine))
+            print("  Player class found: " .. tostring(classFound))
+            
+            local finalResult = IsMatchingArmor(itemID)
+            print("  Final filtering result: " .. tostring(finalResult))
+        else
+            print("  Item not found")
+        end
     elseif msg == "scanitems" then
         print("WarbandBankFilter: Scanning for Funhouse Lens in warband bank...")
         local frame = _G["AccountBankPanel"]
@@ -801,6 +860,29 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
         else
             print("WarbandBankFilter: AccountBankPanel not found")
         end
+    elseif msg == "cache" then
+        print("WarbandBankFilter: Cache status")
+        local count = 0
+        for itemID, result in pairs(itemFilterCache) do
+            count = count + 1
+        end
+        print("  Cached items: " .. count)
+        print("  Last search text: '" .. lastSearchText .. "'")
+        if count > 0 then
+            print("  Sample cached items:")
+            local shown = 0
+            for itemID, result in pairs(itemFilterCache) do
+                if shown < 5 then
+                    local itemName = GetItemInfo(itemID)
+                    print("    " .. (itemName or "Unknown") .. " (ID: " .. itemID .. ") = " .. tostring(result))
+                    shown = shown + 1
+                end
+            end
+        end
+    elseif msg == "clearcache" then
+        print("WarbandBankFilter: Clearing filter cache...")
+        ClearFilterCache()
+        print("  Cache cleared")
     else
         print("WarbandBankFilter commands:")
         print("/wbf debug - List all bank-related frames")
@@ -809,8 +891,11 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
         print("/wbf funhouse - Test Funhouse Lens filtering specifically")
         print("/wbf scanitems - Find Funhouse items in warband bank")
         print("/wbf testitem <itemid> - Test filtering for a specific item ID")
+        print("/wbf staff - Test Dalaran Defender's Battlestaff specifically")
         print("/wbf retry - Retry hooking warband bank")
         print("/wbf inspect - Detailed inspection of AccountBankPanel")
+        print("/wbf cache - Show cache status and sample items")
+        print("/wbf clearcache - Clear the filter cache")
         print("/wbf toggledebug - Info on how to toggle debug mode for armor tokens")
     end
 end
