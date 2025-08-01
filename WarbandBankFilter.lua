@@ -181,21 +181,28 @@ local function IsMatchingArmor(itemID)
     
     local result = false -- Default to false
     
-    -- First check for class restrictions on ALL items
-    local hasClassesLine, classFound = HasClassRestriction(itemID)
-    if hasClassesLine then
-        -- If item has "Classes:" line, only show if our class is listed
-        result = classFound
-        itemFilterCache[itemID] = result
-        return result
-    end
-    
     -- Get item info - if it's not loaded yet, show the item (don't hide it)
     local _, _, _, _, _, itemType, itemSubType = GetItemInfo(itemID)
     
     -- If item info isn't loaded yet, don't cache and show the item by default
     if not itemType or not itemSubType then
         return true
+    end
+    
+    -- Always show crafting reagents (Trade Goods)
+    if itemType == "Trade Goods" then
+        result = true
+        itemFilterCache[itemID] = result
+        return result
+    end
+    
+    -- Check for class restrictions on equipment items
+    local hasClassesLine, classFound = HasClassRestriction(itemID)
+    if hasClassesLine then
+        -- If item has "Classes:" line, only show if our class is listed
+        result = classFound
+        itemFilterCache[itemID] = result
+        return result
     end
     
     -- Special handling for trinkets and miscellaneous items - show if they have our primary stat OR no primary stats at all
@@ -593,8 +600,22 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
         print("WarbandBankFilter: Use '/reload' after editing the .lua file to change debug mode")
         print("  Look for 'local debugMode = true' in IsArmorTokenForMyClass function")
  
+    elseif msg == "class" then
+        local localizedClass, classToken = UnitClass("player")
+        print("WarbandBankFilter: Class detection debug")
+        print("  Stored class variable: " .. (class or "nil"))
+        print("  Current localized class: " .. (localizedClass or "nil"))
+        print("  Current class token: " .. (classToken or "nil"))
+        print("  Armor type: " .. (myArmorType or "nil"))
+        print("  Primary stats: " .. table.concat(myPrimaryStats, ", "))
     elseif msg == "idol" then
         print("WarbandBankFilter: Testing Idol of the Sage specifically...")
+        -- Check current class detection
+        local localizedClass, classToken = UnitClass("player")
+        print("  Current localized class: " .. (localizedClass or "unknown"))
+        print("  Current class token: " .. (classToken or "unknown"))
+        print("  Stored class variable: " .. (class or "unknown"))
+        
         -- Try to find Idol of the Sage
         local idolFound = false
         local frame = _G["AccountBankPanel"]
@@ -724,37 +745,11 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
         print("/wbf test <itemname> - Test class restriction checking for an item")
         print("/wbf testitem <itemid> - Test filtering for a specific item ID")
         print("/wbf testitem - Test item under cursor")
+        print("/wbf class - Show current class detection")
         print("/wbf idol - Test Idol of the Sage specifically")
         print("/wbf retry - Retry hooking warband bank")
         print("/wbf cache - Show cache status and sample items")
         print("/wbf clearcache - Clear the filter cache")
         print("/wbf toggledebug - Info on how to toggle debug mode for armor tokens")
-    elseif msg == "testitem" then
-        print("WarbandBankFilter: Testing item under cursor...")
-        local itemName, itemLink = GameTooltip:GetItem()
-        if itemLink then
-            local itemID = GetItemInfoFromHyperlink(itemLink)
-            if itemID then
-                print("  Found item: " .. itemName .. " (ID: " .. itemID .. ")")
-                print("  Player class: " .. class)
-                
-                -- Test class restrictions
-                local hasClassesLine, classFound = HasClassRestriction(itemID)
-                print("  Has Classes line: " .. tostring(hasClassesLine))
-                print("  Player class found: " .. tostring(classFound))
-                local finalResult = IsMatchingArmor(itemID)
-                print("  Final filtering result: " .. tostring(finalResult))
-                print("  Should be visible: " .. tostring(finalResult))
-                
-                -- Show item type info
-                local _, _, _, _, _, itemType, itemSubType = GetItemInfo(itemID)
-                print("  Item type: " .. (itemType or "nil"))
-                print("  Item subtype: " .. (itemSubType or "nil"))
-            else
-                print("  Could not get item ID from link")
-            end
-        else
-            print("  No item under cursor. Hover over an item and try again.")
-        end
     end
 end
