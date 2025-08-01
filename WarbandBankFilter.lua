@@ -404,7 +404,7 @@ local function CreateFilterCheckbox(frame)
     local checkbox = CreateFrame("CheckButton", "WarbandBankFilterCheckbox", frame, "UICheckButtonTemplate")
     -- Position the checkbox below the warband icon, more to the right
     checkbox:SetPoint("TOPLEFT", frame, "TOPLEFT", 80, -30)
-    checkbox.text:SetText("Usable Only")
+    checkbox.text:SetText("Show     \nUsable Only")
     checkbox:SetChecked(filterEnabled)
     checkbox:SetScript("OnClick", function(self)
         filterEnabled = self:GetChecked()
