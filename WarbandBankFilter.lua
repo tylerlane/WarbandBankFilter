@@ -123,14 +123,16 @@ local function HasClassRestriction(itemID)
                     
                     if debugMode then
                         print("  Found Classes line: " .. text)
+                        print("  Looking for class: " .. lowerClass)
                     end
                     
-                    -- Handle class name variations
+                    -- Handle class name variations and be more flexible with matching
                     local classVariations = {
                         deathknight = {"death knight", "deathknight", "dk"},
                         demonhunter = {"demon hunter", "demonhunter", "dh"}
                     }
                     
+                    -- Check for class name in the text
                     if classVariations[lowerClass] then
                         for _, variation in ipairs(classVariations[lowerClass]) do
                             if lowerText:find(variation) then
@@ -142,7 +144,9 @@ local function HasClassRestriction(itemID)
                             end
                         end
                     else
-                        if lowerText:find(lowerClass) then
+                        -- For regular classes, look for the class name as a whole word
+                        local pattern = "%f[%a]" .. lowerClass .. "%f[%A]"
+                        if lowerText:find(pattern) then
                             classFound = true
                             if debugMode then
                                 print("  Found direct class match: " .. lowerClass)
@@ -589,122 +593,12 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
         print("WarbandBankFilter: Use '/reload' after editing the .lua file to change debug mode")
         print("  Look for 'local debugMode = true' in IsArmorTokenForMyClass function")
  
-    elseif msg == "zenith" then
-        print("WarbandBankFilter: Testing Zenith Hand Module specifically...")
-        local hasClassesLine, classFound = HasClassRestriction(224069) -- Zenith Hand Module item ID
-        print("  Has Classes line: " .. tostring(hasClassesLine))
-        print("  Player class found: " .. tostring(classFound))
-        local finalResult = IsMatchingArmor(224069)
-        print("  Final filtering result: " .. tostring(finalResult))
-        print("  Player class: " .. class)
-        print("  Expected: Should be filtered out if not for this class")
-    elseif msg == "funhouse" then
-        print("WarbandBankFilter: Testing Funhouse Lens specifically...")
-        local itemID = 234217 -- Funhouse Lens item ID
-        print("  Using item ID: " .. itemID)
-        
-        -- More aggressive item loading attempts
-        print("  Attempting to load item data...")
-        C_Item.RequestLoadItemDataByID(itemID)
-        
-        -- Create a temporary tooltip to force load the item
-        local tooltip = CreateFrame("GameTooltip", "FunhouseTestTooltip", UIParent, "GameTooltipTemplate")
-        tooltip:SetOwner(UIParent, "ANCHOR_NONE")
-        tooltip:SetItemByID(itemID)
-        tooltip:Hide()
-        
-        -- Also try these loading methods
-        C_TooltipInfo.GetItemByID(itemID)
-        GetItemInfo(itemID)
-        
-        -- Try multiple times with increasing delays
-        local function tryLoadItem(attempt)
-            local itemName = GetItemInfo(itemID)
-            print("  Attempt " .. attempt .. " - Item name: " .. (itemName or "nil - not loaded"))
-            
-            if itemName then
-                -- Test class restrictions first
-                local hasClassesLine, classFound = HasClassRestriction(itemID)
-                print("  Has Classes line: " .. tostring(hasClassesLine))
-                print("  Player class found: " .. tostring(classFound))
-                
-                -- Get item info to debug
-                local _, _, _, _, _, itemType, itemSubType = GetItemInfo(itemID)
-                print("  Item type: " .. (itemType or "nil"))
-                print("  Item subtype: " .. (itemSubType or "nil"))
-                
-                -- Test stats
-                local stats = C_Item.GetItemStats(itemID)
-                if stats then
-                    print("  Item stats:")
-                    for statKey, statValue in pairs(stats) do
-                        print("    " .. statKey .. " = " .. statValue)
-                    end
-                    
-                    -- Test primary stat detection
-                    print("  Player primary stats: " .. table.concat(myPrimaryStats, ", "))
-                    
-                    local hasAnyPrimaryStat = false
-                    local hasMyPrimaryStat = false
-                    
-                    for statKey, statValue in pairs(stats) do
-                        local upperKey = statKey:upper()
-                        
-                        -- Check if it has any primary stat
-                        if upperKey == "ITEM_MOD_STRENGTH_SHORT" or upperKey == "STRENGTH" or string.find(upperKey, "^ITEM_MOD_STRENGTH_") or
-                           upperKey == "ITEM_MOD_AGILITY_SHORT" or upperKey == "AGILITY" or string.find(upperKey, "^ITEM_MOD_AGILITY_") or
-                           upperKey == "ITEM_MOD_INTELLECT_SHORT" or upperKey == "INTELLECT" or string.find(upperKey, "^ITEM_MOD_INTELLECT_") then
-                            hasAnyPrimaryStat = true
-                            print("  Found primary stat: " .. upperKey)
-                            
-                            -- Check if it has our specific primary stat(s)
-                            for _, primaryStat in ipairs(myPrimaryStats) do
-                                local primaryStatUpper = primaryStat:upper()
-                                if upperKey == "ITEM_MOD_" .. primaryStatUpper .. "_SHORT" or
-                                   upperKey == primaryStatUpper or
-                                   string.find(upperKey, "^ITEM_MOD_" .. primaryStatUpper .. "_") then
-                                    hasMyPrimaryStat = true
-                                    print("  Matches our primary stat: " .. primaryStat)
-                                    break
-                                end
-                            end
-                        end
-                    end
-                    
-                    print("  Has any primary stat: " .. tostring(hasAnyPrimaryStat))
-                    print("  Has my primary stat: " .. tostring(hasMyPrimaryStat))
-                    print("  Trinket logic result: " .. tostring(hasMyPrimaryStat or not hasAnyPrimaryStat))
-                else
-                    print("  No stats found")
-                end
-                
-                local finalResult = IsMatchingArmor(itemID)
-                print("  Final filtering result: " .. tostring(finalResult))
-                print("  Player class: " .. class)
-            else
-                print("  Item data still not loaded on attempt " .. attempt)
-                if attempt < 5 then
-                    -- Try again with longer delay
-                    C_Timer.After(0.5 * attempt, function()
-                        tryLoadItem(attempt + 1)
-                    end)
-                else
-                    print("  FAILED: Item data could not be loaded after 5 attempts")
-                    print("  This usually means:")
-                    print("    1. You need to see the item in-game first (hover over it)")
-                    print("    2. The item ID might be wrong")
-                    print("    3. You're not connected to the server")
-                end
-            end
-        end
-        
-        -- Start the loading attempts
-        tryLoadItem(1)
-    elseif msg == "staff" then
-        print("WarbandBankFilter: Testing staff detection...")
+    elseif msg == "idol" then
+        print("WarbandBankFilter: Testing Idol of the Sage specifically...")
+        -- Try to find Idol of the Sage
+        local idolFound = false
         local frame = _G["AccountBankPanel"]
         if frame and frame:IsVisible() then
-            local staffCount = 0
             for i = 1, frame:GetNumChildren() do
                 local child = select(i, frame:GetChildren())
                 if child and child:GetObjectType() and string.find(child:GetObjectType(), "Button") then
@@ -721,124 +615,50 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
                     end
                     
                     if itemID then
-                        local _, _, _, _, _, itemType, itemSubType = GetItemInfo(itemID)
-                        if itemType == "Weapon" and itemSubType == "Staves" then
-                            staffCount = staffCount + 1
-                            local itemName = GetItemInfo(itemID)
-                            print("  Found staff: " .. (itemName or "Unknown") .. " (ID: " .. itemID .. ")")
+                        local itemName = GetItemInfo(itemID)
+                        if itemName and itemName:lower():find("idol") and itemName:lower():find("sage") then
+                            idolFound = true
+                            print("  Found Idol of the Sage: " .. itemName .. " (ID: " .. itemID .. ")")
+                            print("  Player class: " .. class)
                             
-                            -- Test if it would be filtered
-                            local shouldShow = IsMatchingArmor(itemID)
-                            print("    Should show: " .. tostring(shouldShow))
-                            print("    Player class: " .. class)
+                            -- Test class restrictions with debug mode
+                            local oldDebugMode = false
+                            -- Temporarily enable debug mode for this test
+                            local tooltip = CreateFrame("GameTooltip", "WarbandBankFilterIdolTooltip", UIParent, "GameTooltipTemplate")
+                            tooltip:SetOwner(UIParent, "ANCHOR_NONE")
+                            tooltip:SetItemByID(itemID)
                             
-                            -- Test class restrictions
-                            local hasClassesLine, classFound = HasClassRestriction(itemID)
-                            if hasClassesLine then
-                                print("    Has class restriction: " .. tostring(classFound))
-                            end
-                            
-                            -- Test stats
-                            local stats = C_Item.GetItemStats(itemID)
-                            if stats then
-                                print("    Has stats - checking primary stats...")
-                                for statKey, statValue in pairs(stats) do
-                                    local upperKey = statKey:upper()
-                                    if upperKey == "ITEM_MOD_STRENGTH_SHORT" or upperKey == "STRENGTH" or string.find(upperKey, "^ITEM_MOD_STRENGTH_") or
-                                       upperKey == "ITEM_MOD_AGILITY_SHORT" or upperKey == "AGILITY" or string.find(upperKey, "^ITEM_MOD_AGILITY_") or
-                                       upperKey == "ITEM_MOD_INTELLECT_SHORT" or upperKey == "INTELLECT" or string.find(upperKey, "^ITEM_MOD_INTELLECT_") then
-                                        print("      Primary stat found: " .. statKey .. " = " .. statValue)
+                            print("  Tooltip lines:")
+                            for j = 1, tooltip:NumLines() do
+                                local line = _G["WarbandBankFilterIdolTooltipTextLeft" .. j]
+                                if line then
+                                    local text = line:GetText()
+                                    if text then
+                                        print("    Line " .. j .. ": " .. text)
+                                        if text:lower():find("classes:") then
+                                            print("    *** This is the Classes line ***")
+                                        end
                                     end
                                 end
-                            else
-                                print("    No stats available")
                             end
+                            tooltip:Hide()
+                            
+                            local hasClassesLine, classFound = HasClassRestriction(itemID)
+                            print("  Has Classes line: " .. tostring(hasClassesLine))
+                            print("  Player class found: " .. tostring(classFound))
+                            local finalResult = IsMatchingArmor(itemID)
+                            print("  Final filtering result: " .. tostring(finalResult))
+                            print("  Should be visible: " .. tostring(finalResult))
+                            break
                         end
                     end
                 end
             end
-            print("  Total staves found: " .. staffCount)
+            if not idolFound then
+                print("  Idol of the Sage not found in warband bank")
+            end
         else
             print("  Warband bank not open")
-        end
-        print("WarbandBankFilter: Testing Dalaran Defender's Battlestaff specifically...")
-        local itemName = "Dalaran Defender's Battlestaff"
-        
-        -- Find item by name
-        local itemID = nil
-        for i = 1, 300000 do
-            local name = GetItemInfo(i)
-            if name and name:lower() == itemName:lower() then
-                itemID = i
-                break
-            end
-        end
-        
-        if itemID then
-            print("  Found item ID: " .. itemID)
-            local _, _, _, _, _, itemType, itemSubType = GetItemInfo(itemID)
-            print("  Item type: " .. (itemType or "nil"))
-            print("  Item subtype: " .. (itemSubType or "nil"))
-            print("  Player class: " .. class)
-            print("  Player weapons: " .. table.concat(myWeapons, ", "))
-            
-            local hasClassesLine, classFound = HasClassRestriction(itemID)
-            print("  Has Classes line: " .. tostring(hasClassesLine))
-            print("  Player class found: " .. tostring(classFound))
-            
-            local finalResult = IsMatchingArmor(itemID)
-            print("  Final filtering result: " .. tostring(finalResult))
-        else
-            print("  Item not found")
-        end
-    elseif msg == "scanitems" then
-        print("WarbandBankFilter: Scanning for Funhouse Lens in warband bank...")
-        local frame = _G["AccountBankPanel"]
-        if not frame or not frame:IsVisible() then
-            print("  Error: Warband bank is not open!")
-            return
-        end
-        
-        -- Scan all item buttons in the warband bank
-        local foundItems = {}
-        for i = 1, frame:GetNumChildren() do
-            local child = select(i, frame:GetChildren())
-            if child and child:GetObjectType() and string.find(child:GetObjectType(), "Button") then
-                local itemID = nil
-                
-                -- Try to get item ID from the button
-                if child.GetItemLocation then
-                    local itemLocation = child:GetItemLocation()
-                    if itemLocation then
-                        itemID = C_Item.GetItemID(itemLocation)
-                    end
-                elseif child.GetBagID and child.GetID then
-                    local bagID = child:GetBagID()
-                    local slotIndex = child:GetID()
-                    if bagID and slotIndex then
-                        local itemLocation = ItemLocation:CreateFromBagAndSlot(bagID, slotIndex)
-                        if itemLocation and itemLocation:IsValid() then
-                            itemID = C_Item.GetItemID(itemLocation)
-                        end
-                    end
-                end
-                
-                if itemID then
-                    local itemName = GetItemInfo(itemID)
-                    if itemName and string.find(itemName:lower(), "funhouse") then
-                        table.insert(foundItems, {id = itemID, name = itemName})
-                        print("  FOUND: " .. itemName .. " (ID: " .. itemID .. ")")
-                    end
-                end
-            end
-        end
-        
-        if #foundItems == 0 then
-            print("  No Funhouse items found in warband bank")
-            print("  Make sure you have a Funhouse Lens in your warband bank")
-        else
-            print("  Found " .. #foundItems .. " Funhouse item(s)")
-            print("  Now run: /wbf testitem " .. foundItems[1].id)
         end
     elseif msg:match("^testitem ") then
         local itemID = tonumber(msg:sub(10)) -- Remove "testitem "
@@ -875,57 +695,6 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
         else
             print("  Item name not available - item not cached")
         end
-    elseif msg == "inspect" then
-        local frame = _G["AccountBankPanel"]
-        if frame then
-            -- print("ArmorFilter: Inspecting AccountBankPanel structure...")
-            -- print("  Frame name: " .. (frame:GetName() or "unnamed"))
-            -- print("  Frame type: " .. frame:GetObjectType())
-            -- print("  Is visible: " .. tostring(frame:IsVisible()))
-            -- print("  Number of children: " .. frame:GetNumChildren())
-            
-            -- Only show non-button children and summarize buttons
-            print("  Important children:")
-            local buttonCount = 0
-            for i = 1, frame:GetNumChildren() do
-                local child = select(i, frame:GetChildren())
-                if child then
-                    local childName = child:GetName() or ("Child" .. i)
-                    local childType = child:GetObjectType()
-                    
-                    if not string.find(childType, "Button") then
-                        print("    " .. childName .. ": " .. childType)
-                        
-                        -- Check if this child has items
-                        if child.items or child.Items then
-                            print("      -> HAS ITEMS!")
-                        end
-                        
-                        -- Check if this child has many button children (likely the item container)
-                        if child:GetNumChildren() > 10 then
-                            local childButtonCount = 0
-                            for j = 1, child:GetNumChildren() do
-                                local grandchild = select(j, child:GetChildren())
-                                if grandchild and string.find(grandchild:GetObjectType(), "Button") then
-                                    childButtonCount = childButtonCount + 1
-                                end
-                            end
-                            if childButtonCount > 0 then
-                                print("      -> Contains " .. childButtonCount .. " buttons (likely item slots)")
-                            end
-                        end
-                    else
-                        buttonCount = buttonCount + 1
-                    end
-                end
-            end
-            
-            if buttonCount > 0 then
-                print("  + " .. buttonCount .. " direct button children (not detailed)")
-            end
-        else
-            print("WarbandBankFilter: AccountBankPanel not found")
-        end
     elseif msg == "cache" then
         print("WarbandBankFilter: Cache status")
         local count = 0
@@ -953,15 +722,39 @@ SlashCmdList["WARBANDBANKFILTER"] = function(msg)
         print("WarbandBankFilter commands:")
         print("/wbf debug - List all bank-related frames")
         print("/wbf test <itemname> - Test class restriction checking for an item")
-        print("/wbf zenith - Test Zenith Hand Module filtering specifically")
-        print("/wbf funhouse - Test Funhouse Lens filtering specifically")
-        print("/wbf scanitems - Find Funhouse items in warband bank")
         print("/wbf testitem <itemid> - Test filtering for a specific item ID")
-        print("/wbf staff - Test Dalaran Defender's Battlestaff specifically")
+        print("/wbf testitem - Test item under cursor")
+        print("/wbf idol - Test Idol of the Sage specifically")
         print("/wbf retry - Retry hooking warband bank")
-        print("/wbf inspect - Detailed inspection of AccountBankPanel")
         print("/wbf cache - Show cache status and sample items")
         print("/wbf clearcache - Clear the filter cache")
         print("/wbf toggledebug - Info on how to toggle debug mode for armor tokens")
+    elseif msg == "testitem" then
+        print("WarbandBankFilter: Testing item under cursor...")
+        local itemName, itemLink = GameTooltip:GetItem()
+        if itemLink then
+            local itemID = GetItemInfoFromHyperlink(itemLink)
+            if itemID then
+                print("  Found item: " .. itemName .. " (ID: " .. itemID .. ")")
+                print("  Player class: " .. class)
+                
+                -- Test class restrictions
+                local hasClassesLine, classFound = HasClassRestriction(itemID)
+                print("  Has Classes line: " .. tostring(hasClassesLine))
+                print("  Player class found: " .. tostring(classFound))
+                local finalResult = IsMatchingArmor(itemID)
+                print("  Final filtering result: " .. tostring(finalResult))
+                print("  Should be visible: " .. tostring(finalResult))
+                
+                -- Show item type info
+                local _, _, _, _, _, itemType, itemSubType = GetItemInfo(itemID)
+                print("  Item type: " .. (itemType or "nil"))
+                print("  Item subtype: " .. (itemSubType or "nil"))
+            else
+                print("  Could not get item ID from link")
+            end
+        else
+            print("  No item under cursor. Hover over an item and try again.")
+        end
     end
 end
