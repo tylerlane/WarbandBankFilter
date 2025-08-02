@@ -3,7 +3,8 @@
 ## Notes: Filters Warband Bank to only show items usable by your class.
 ## Author: Tyler Lane
 ## Version: 1.0
-## IconTexture: Interface\AddOns\WarbandBankFilter\WarbandBankFilter
+## IconTexture: Interface\AddOns\WarbandBankFilter\WarbandBankFilter.png
 ## SavedVariables: WarbandBankFilterDB
+## X-Category: Bags & Inventory
 
 WarbandBankFilter.lua
